@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import pdb
 
 def set_seed(seed):
     random.seed(seed)
@@ -45,3 +46,25 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None):
         x = torch.cat((x, ix), dim=1)
 
     return x
+
+
+@torch.no_grad()
+def fill_batch(model, x, temperature=1.0):
+    """
+    take a conditioning sequence of indices in x (of shape (b,t)) and predict the next token in
+    the sequence, feeding the predictions back into the model each time. Clearly the sampling
+    has quadratic complexity unlike an RNN that is only linear, and has a finite context window
+    of block_size, unlike an RNN that has an infinite context window.
+    """
+    logits, _ = model(x)
+    # pluck the logits at the final step and scale by temperature
+    logits = logits / temperature
+    # optionally crop probabilities to only the top k options
+    
+    # apply softmax to convert to probabilities
+    probs = F.softmax(logits, dim=-1)
+    pdb.set_trace()
+    _, ix = torch.topk(probs, k=1, dim=-1)
+    # append to the sequence and continue
+
+    return ix

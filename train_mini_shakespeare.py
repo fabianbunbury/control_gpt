@@ -1,7 +1,10 @@
 # set up logging
-from copy import deepcopy
 import logging
-
+logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+)
 # make deterministic
 from mingpt.utils import set_seed
 set_seed(42)
@@ -12,26 +15,17 @@ from torch.nn import functional as F
 
 import math
 from torch.utils.data import Dataset
-from mingpt.infill_trainer import Trainer, TrainerConfig
-from mingpt.utils import sample, fill_batch
-import random
-import pdb
-from mingpt.model import GPT, GPTConfig, Non_causal_GPT
+from mingpt.trainer import Trainer, TrainerConfig
+from mingpt.utils import sample
 
-import copy
-logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-        datefmt="%m/%d/%Y %H:%M:%S",
-        level=logging.INFO,
-)
+import pdb
+
 
 class CharDataset(Dataset):
 
     def __init__(self, data, block_size):
         chars = sorted(list(set(data)))
-        chars.append('_blanc_')
-        data_size, vocab_size = len(data), len(chars) # add one to the number of chars to account for blanks
-
+        data_size, vocab_size = len(data), len(chars)
         print('data has %d characters, %d unique.' % (data_size, vocab_size))
         
         self.stoi = { ch:i for i,ch in enumerate(chars) }
@@ -82,42 +76,18 @@ class CharDataset(Dataset):
         but during test time we can only go B at a time, T times, with T forward 
         passes.
         """
-
-        y = torch.tensor(dix[:-1], dtype=torch.long)
-        x = copy.deepcopy(y)
-
-        ## randomly delete blocks of info in the data set
-        self.num_state_types = 1
-        self.num_states_per_step = 1
-
-
-        deletion_mode = random.randint(0,0)
-        if deletion_mode == 0: #this mode deletes all elements at a certain time
-
-            start_deleting_from = random.randint(0,(self.block_size/self.num_states_per_step)-1)
-
-            stop_deleting_from = random.randint(start_deleting_from, (self.block_size/self.num_states_per_step)-1)
-            index_of_states_to_delete = torch.range(start_deleting_from*self.num_states_per_step, 
-                                                    stop_deleting_from*self.num_states_per_step,    
-                                                    1 )
-            x[index_of_states_to_delete.numpy()] = self.vocab_size-1
-
-
-        elif deletion_mode == 1:
-
-            index_of_patches_to_delete = 2
-            """ the deleted blocks should not be entierly random but
-            instead should be large contiguous blocks. """
+        x = torch.tensor(dix[:-1], dtype=torch.long)
+        y = torch.tensor(dix[1:], dtype=torch.long)
         return x, y
 
 block_size = 128 # spatial extent of the model for its context
 # you can download this file at https://github.com/karpathy/char-rnn/blob/master/data/tinyshakespeare/input.txt
 text = open('input.txt', 'r').read() # don't worry we won't run out of file handles
 train_dataset = CharDataset(text, block_size) # one line of poem is roughly 50 characters
+from mingpt.model import GPT, GPTConfig
 mconf = GPTConfig(train_dataset.vocab_size, train_dataset.block_size,
                   n_layer=3, n_head=2, n_embd=26)
-model = Non_causal_GPT(mconf)
-
+model = GPT(mconf)
 
 # initialize a trainer instance and kick off training
 tconf = TrainerConfig(max_epochs=2, batch_size=512, learning_rate=6e-4,
@@ -127,9 +97,8 @@ trainer = Trainer(model, train_dataset, None, tconf)
 trainer.train()
 pdb.set_trace()
 
-context = train_dataset.data[0:train_dataset.block_size]
+context = "O God, O God!"
 x = torch.tensor([train_dataset.stoi[s] for s in context], dtype=torch.long)[None,...].to(trainer.device)
-x[0,[3,4,5]]  = train_dataset.vocab_size-1
-y = fill_batch(model, x, temperature=1.0)[0]
+y = sample(model, x, 2000, temperature=1.0, sample=True, top_k=10)[0]
 completion = ''.join([train_dataset.itos[int(i)] for i in y])
 print(completion) 

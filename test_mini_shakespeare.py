@@ -3,7 +3,17 @@ from mingpt.utils import sample, fill_batch
 import torch
 import random
 import copy
+import pdb
+from torch.utils.data import Dataset
+import os
+from torch.nn import functional as F
+import numpy as np
 
+def top_k_logits(logits, k):
+    v, ix = torch.topk(logits, k)
+    out = logits.clone()
+    out[out < v[:, [-1]]] = -float('Inf')
+    return out
 class CharDataset(Dataset):
 
     def __init__(self, data, block_size):
@@ -95,4 +105,52 @@ if __name__ == '__main__':
     # you can download this file at https://github.com/karpathy/char-rnn/blob/master/data/tinyshakespeare/input.txt
     text = open('input.txt', 'r').read() # don't worry we won't run out of file handles
     test_dataset = CharDataset(text, block_size)
-    model = torch.load('/home/fabian/control_gpt/trained_mini_sheaksspear')
+    pdb.set_trace()
+    path = os.path.dirname(os.path.abspath(__file__))+'/trained_mini_sheaksspear'
+
+    model = torch.load(path)
+    input_data, output_data = test_dataset.__getitem__(0)
+    # x = torch.tensor([test_dataset.stoi[s] for s in input_data], dtype=torch.long)[None,...]
+    x = input_data[None,...]
+    x = x.to(torch.device("cuda"))
+    logits, _ = model(x) 
+    temperature = 1.0
+    logits = logits[:, :, :] / temperature
+    top_k = 10
+    logits_topk, indexes = torch.topk(logits, top_k)
+
+    most_likely =  indexes[:,:,0]
+    logits[0,np.arange(0,10),np.arange(4,14)]
+    probs = F.softmax(logits_topk, dim=-1)
+    # ix = torch.multinomial(probs, num_samples=1)
+    _, ix = torch.topk(probs, k=1, dim=-1)
+
+    input_data = ''.join([test_dataset.itos[int(i)] for i in input_data])
+    print('\n #########input_data##########')
+    print(input_data)
+    text_output_from_transformer = ''.join([test_dataset.itos[int(i)] for i in most_likely[0]])
+    print('\n #############text_output_from_transformer##############')
+    print(text_output_from_transformer)
+    target_data = ''.join([test_dataset.itos[int(i)] for i in output_data])
+    print('\n ############target_data###############')
+    print(target_data)
+    sampled_data = torch.multinomial(probs[0],num_samples=1).cpu().detach().numpy()
+
+    # indexes[sampled_data]
+    indexes_numpy = indexes[0].cpu().detach().numpy()
+    # np.take(indexes_numpy,sampled_data.flatten(),-1)
+    # indexes_numpy[0,:,sampled_data.flatten()]
+    index_of_elements = sampled_data.flatten()
+    dim_0_dimension_of_index = np.arange(0,len(index_of_elements))
+    # index_of_indexes = np.stack((dim_0_dimension_of_index,index_of_elements),1).tolist()
+    # indexes_numpy[index_of_indexes]
+    sampled_values = indexes_numpy[dim_0_dimension_of_index,index_of_elements]
+    target_data = ''.join([test_dataset.itos[int(i)] for i in sampled_values])
+    print('\n ############sampled_data###############')
+    print(target_data)
+    test = [[0,1],[2,2]]
+    
+
+
+  
+
